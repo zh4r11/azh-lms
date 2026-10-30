@@ -1,0 +1,491 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  GURU
+  WALI_KELAS
+  SISWA
+}
+
+enum JenisKelamin {
+  PRIA
+  WANITA
+}
+
+enum Hari {
+  SENIN
+  SELASA
+  RABU
+  KAMIS
+  JUMAT
+}
+
+enum Semester {
+  GANJIL
+  GENAP
+}
+
+enum StatusKehadiran {
+  HADIR
+  IZIN
+  BERTUGAS_KELUAR
+  SAKIT
+  TERLAMBAT
+  TANPA_KETERANGAN
+}
+
+enum JenisUjian {
+  UTS
+  UAS
+  UJIAN_SEKOLAH
+}
+
+enum Tingkat {
+  X
+  XI
+  XII
+}
+
+enum TipeMateri {
+  DOKUMEN
+  VIDEO
+}
+
+enum JenisAsesmen {
+  TUGAS
+  KUIS
+  UJIAN
+}
+
+/// SOAL: answered on screen (pilihan ganda or essay). UPLOAD: the student uploads an answer file.
+enum ModeAsesmen {
+  SOAL
+  UPLOAD
+}
+
+enum TipeSoal {
+  PG
+  ESSAY
+}
+
+enum JenisSikap {
+  SPIRITUAL
+  SOSIAL
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  role         Role
+  passwordHash String
+  // Which student or teacher record this login belongs to. Siswa may only open their own rapor.
+  siswaId      Int?     @unique
+  siswa        Siswa?   @relation(fields: [siswaId], references: [id], onDelete: SetNull)
+  guruId       Int?     @unique
+  guru         Guru?    @relation(fields: [guruId], references: [id], onDelete: SetNull)
+  berkas       Berkas[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Pelajaran {
+  id          Int           @id @default(autoincrement())
+  nama        String        @unique
+  jumlahJam   Int
+  guru        Guru[]
+  jadwal      Jadwal[]
+  jadwalUjian JadwalUjian[]
+  nilai       Nilai[]
+  pertemuan   Pertemuan[]
+  bahanAjar   BahanAjar[]
+  soal        Soal[]
+  asesmen     Asesmen[]
+  bobotNilai  BobotNilai[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Guru {
+  id          Int           @id @default(autoincrement())
+  noInduk     String?       @unique
+  nama        String
+  jk          JenisKelamin
+  telp        String
+  alamat      String
+  // SetNull instead of the old cascade: deleting a subject must not delete teachers.
+  pelajaranId Int?
+  pelajaran   Pelajaran?    @relation(fields: [pelajaranId], references: [id], onDelete: SetNull)
+  jadwal      Jadwal[]
+  kelasWali   Kelas[]
+  nilai       Nilai[]
+  mengawas    JadwalUjian[]
+  pertemuan   Pertemuan[]
+  soal        Soal[]
+  asesmen     Asesmen[]
+  user        User?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Kelas {
+  id          Int           @id @default(autoincrement())
+  nama        String        @unique
+  tingkat     Tingkat
+  waliKelasId Int?
+  waliKelas   Guru?         @relation(fields: [waliKelasId], references: [id], onDelete: SetNull)
+  siswa       Siswa[]
+  jadwal      Jadwal[]
+  pertemuan   Pertemuan[]
+  nilai       Nilai[]
+  jadwalUjian JadwalUjian[]
+  asesmen     Asesmen[]
+  bobotNilai  BobotNilai[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Siswa {
+  id                   Int                    @id @default(autoincrement())
+  noInduk              String                 @unique
+  nama                 String
+  jk                   JenisKelamin
+  telp                 String
+  alamat               String
+  tempatLahir          String
+  tanggalLahir         DateTime               @db.Date
+  kelasId              Int?
+  kelas                Kelas?                 @relation(fields: [kelasId], references: [id], onDelete: SetNull)
+  absensi              Absensi[]
+  nilai                Nilai[]
+  nilaiSikap           NilaiSikap[]
+  nilaiEkstrakurikuler NilaiEkstrakurikuler[]
+  nilaiPrestasi        NilaiPrestasi[]
+  pengerjaan           Pengerjaan[]
+  user                 User?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+}
+
+model Jadwal {
+  id          Int       @id @default(autoincrement())
+  hari        Hari
+  jamMulai    String
+  jamSelesai  String
+  pelajaranId Int
+  pelajaran   Pelajaran @relation(fields: [pelajaranId], references: [id], onDelete: Cascade)
+  guruId      Int?
+  guru        Guru?     @relation(fields: [guruId], references: [id], onDelete: SetNull)
+  kelasId     Int
+  kelas       Kelas     @relation(fields: [kelasId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([kelasId, hari])
+  @@index([guruId])
+}
+
+// One row is one class sitting one subject. The same subject for six classes is six rows,
+// each with its own room and invigilator.
+model JadwalUjian {
+  id          Int        @id @default(autoincrement())
+  jenis       JenisUjian
+  semester    Semester
+  tanggal     DateTime   @db.Date
+  jamMulai    String
+  jamSelesai  String
+  pelajaranId Int
+  pelajaran   Pelajaran  @relation(fields: [pelajaranId], references: [id], onDelete: Cascade)
+  kelasId     Int
+  kelas       Kelas      @relation(fields: [kelasId], references: [id], onDelete: Cascade)
+  ruang       String
+  pengawasId  Int?
+  pengawas    Guru?      @relation(fields: [pengawasId], references: [id], onDelete: SetNull)
+  /// Present when the subject teacher runs this exam online.
+  asesmen     Asesmen?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([tanggal])
+  @@index([kelasId])
+  @@index([pengawasId])
+}
+
+/// One lesson of one subject in one class. "urutan" is pertemuan ke-N, which picks the
+/// default bahan ajar for that subject, grade, and N.
+model Pertemuan {
+  id               Int       @id @default(autoincrement())
+  judul            String
+  tanggal          DateTime  @db.Date
+  urutan           Int
+  kelasId          Int
+  kelas            Kelas     @relation(fields: [kelasId], references: [id], onDelete: Cascade)
+  pelajaranId      Int
+  pelajaran        Pelajaran @relation(fields: [pelajaranId], references: [id], onDelete: Cascade)
+  guruId           Int?
+  guru             Guru?     @relation(fields: [guruId], references: [id], onDelete: SetNull)
+  /// Online class: students mark themselves present between these two moments.
+  absenOnlineBuka  DateTime?
+  absenOnlineTutup DateTime?
+  absensi          Absensi[]
+  materi           Materi[]
+  asesmen          Asesmen[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([kelasId, pelajaranId])
+}
+
+model Absensi {
+  id          Int             @id @default(autoincrement())
+  pertemuanId Int
+  pertemuan   Pertemuan       @relation(fields: [pertemuanId], references: [id], onDelete: Cascade)
+  siswaId     Int
+  siswa       Siswa           @relation(fields: [siswaId], references: [id], onDelete: Cascade)
+  status      StatusKehadiran
+  /// Set when the student checked in themselves during an online class.
+  online      Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([pertemuanId, siswaId])
+}
+
+model Nilai {
+  id               Int       @id @default(autoincrement())
+  siswaId          Int
+  siswa            Siswa     @relation(fields: [siswaId], references: [id], onDelete: Cascade)
+  kelasId          Int?
+  kelas            Kelas?    @relation(fields: [kelasId], references: [id], onDelete: SetNull)
+  guruId           Int?
+  guru             Guru?     @relation(fields: [guruId], references: [id], onDelete: SetNull)
+  pelajaranId      Int
+  pelajaran        Pelajaran @relation(fields: [pelajaranId], references: [id], onDelete: Cascade)
+  semester         Semester
+  nilai            Int
+  predikat         String    @db.Char(1)
+  deskPengetahuan  String
+  deskKeterampilan String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([siswaId, pelajaranId, semester])
+}
+
+model NilaiSikap {
+  id        Int        @id @default(autoincrement())
+  siswaId   Int
+  siswa     Siswa      @relation(fields: [siswaId], references: [id], onDelete: Cascade)
+  jenis     JenisSikap
+  predikat  String
+  deskripsi String
+  semester  Semester
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([siswaId, jenis, semester])
+}
+
+model NilaiEkstrakurikuler {
+  id        Int      @id @default(autoincrement())
+  siswaId   Int
+  siswa     Siswa    @relation(fields: [siswaId], references: [id], onDelete: Cascade)
+  kegiatan  String
+  nilai     Int
+  deskripsi String
+  semester  Semester
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model NilaiPrestasi {
+  id            Int      @id @default(autoincrement())
+  siswaId       Int
+  siswa         Siswa    @relation(fields: [siswaId], references: [id], onDelete: Cascade)
+  jenisKegiatan String
+  keterangan    String
+  semester      Semester
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// A stored upload. Files live under storage/ on disk; "kunci" is the file name there.
+model Berkas {
+  id           Int          @id @default(autoincrement())
+  nama         String
+  mime         String
+  ukuran       Int
+  kunci        String       @unique
+  pengunggahId Int?
+  pengunggah   User?        @relation(fields: [pengunggahId], references: [id], onDelete: SetNull)
+  materi       Materi[]
+  asesmen      Asesmen[]
+  pengerjaan   Pengerjaan[]
+  createdAt    DateTime     @default(now())
+}
+
+/// Default teaching plan from the school: subject, grade, and pertemuan ke-N.
+model BahanAjar {
+  id          Int       @id @default(autoincrement())
+  pelajaranId Int
+  pelajaran   Pelajaran @relation(fields: [pelajaranId], references: [id], onDelete: Cascade)
+  tingkat     Tingkat
+  urutan      Int
+  judul       String
+  deskripsi   String    @default("")
+  materi      Materi[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([pelajaranId, tingkat, urutan])
+}
+
+/// A document or video, either part of a default bahan ajar or added by a teacher to a pertemuan.
+model Materi {
+  id          Int        @id @default(autoincrement())
+  judul       String
+  deskripsi   String     @default("")
+  tipe        TipeMateri
+  berkasId    Int?
+  berkas      Berkas?    @relation(fields: [berkasId], references: [id], onDelete: SetNull)
+  /// YouTube link for a video that is not uploaded.
+  url         String?
+  bahanAjarId Int?
+  bahanAjar   BahanAjar? @relation(fields: [bahanAjarId], references: [id], onDelete: Cascade)
+  pertemuanId Int?
+  pertemuan   Pertemuan? @relation(fields: [pertemuanId], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now())
+
+  @@index([bahanAjarId])
+  @@index([pertemuanId])
+}
+
+/// Tugas, kuis, or online ujian for one subject in one class.
+model Asesmen {
+  id             Int           @id @default(autoincrement())
+  jenis          JenisAsesmen
+  mode           ModeAsesmen
+  judul          String
+  instruksi      String        @default("")
+  semester       Semester
+  kelasId        Int
+  kelas          Kelas         @relation(fields: [kelasId], references: [id], onDelete: Cascade)
+  pelajaranId    Int
+  pelajaran      Pelajaran     @relation(fields: [pelajaranId], references: [id], onDelete: Cascade)
+  guruId         Int?
+  guru           Guru?         @relation(fields: [guruId], references: [id], onDelete: SetNull)
+  pertemuanId    Int?
+  pertemuan      Pertemuan?    @relation(fields: [pertemuanId], references: [id], onDelete: SetNull)
+  jadwalUjianId  Int?          @unique
+  jadwalUjian    JadwalUjian?  @relation(fields: [jadwalUjianId], references: [id], onDelete: Cascade)
+  /// Question sheet for UPLOAD mode.
+  lampiranId     Int?
+  lampiran       Berkas?       @relation(fields: [lampiranId], references: [id], onDelete: SetNull)
+  dibuka         DateTime
+  ditutup        DateTime
+  /// Working time per student for SOAL mode; null means until "ditutup".
+  durasiMenit    Int?
+  acakSoal       Boolean       @default(false)
+  tampilkanHasil Boolean       @default(true)
+  /// Students only see it once published.
+  terbit         Boolean       @default(false)
+  soal           AsesmenSoal[]
+  pengerjaan     Pengerjaan[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([kelasId, pelajaranId])
+}
+
+/// A question. Questions with "diBank" show up in the bank soal for reuse.
+model Soal {
+  id          Int           @id @default(autoincrement())
+  pelajaranId Int
+  pelajaran   Pelajaran     @relation(fields: [pelajaranId], references: [id], onDelete: Cascade)
+  tingkat     Tingkat
+  tipe        TipeSoal
+  pertanyaan  String
+  /// Answer options for PG, in order.
+  opsi        String[]
+  /// Index into opsi of the right answer, for PG.
+  kunci       Int?
+  pembahasan  String        @default("")
+  diBank      Boolean       @default(true)
+  pembuatId   Int?
+  pembuat     Guru?         @relation(fields: [pembuatId], references: [id], onDelete: SetNull)
+  asesmen     AsesmenSoal[]
+  jawaban     Jawaban[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([pelajaranId, tingkat])
+}
+
+model AsesmenSoal {
+  asesmenId Int
+  asesmen   Asesmen @relation(fields: [asesmenId], references: [id], onDelete: Cascade)
+  soalId    Int
+  soal      Soal    @relation(fields: [soalId], references: [id], onDelete: Cascade)
+  urutan    Int
+  bobot     Int     @default(1)
+
+  @@id([asesmenId, soalId])
+}
+
+/// One student attempt. "batas" is when their time runs out (start plus duration, capped by ditutup).
+model Pengerjaan {
+  id          Int       @id @default(autoincrement())
+  asesmenId   Int
+  asesmen     Asesmen   @relation(fields: [asesmenId], references: [id], onDelete: Cascade)
+  siswaId     Int
+  siswa       Siswa     @relation(fields: [siswaId], references: [id], onDelete: Cascade)
+  mulai       DateTime  @default(now())
+  batas       DateTime
+  dikumpulkan DateTime?
+  berkasId    Int?
+  berkas      Berkas?   @relation(fields: [berkasId], references: [id], onDelete: SetNull)
+  /// 0 to 100. Null until every essay (or the uploaded file) has been graded.
+  nilai       Float?
+  catatan     String    @default("")
+  jawaban     Jawaban[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([asesmenId, siswaId])
+}
+
+model Jawaban {
+  pengerjaanId Int
+  pengerjaan   Pengerjaan @relation(fields: [pengerjaanId], references: [id], onDelete: Cascade)
+  soalId       Int
+  soal         Soal       @relation(fields: [soalId], references: [id], onDelete: Cascade)
+  pilihan      Int?
+  teks         String?
+  /// The "ragu-ragu" flag a student can set while working.
+  ragu         Boolean    @default(false)
+  /// 0 to 1 of the question weight. PG is scored on submit, essay by the teacher.
+  skor         Float?
+
+  @@id([pengerjaanId, soalId])
+}
+
+/// Weights a teacher uses to turn tugas, kuis, and ujian averages into the rapor grade.
+model BobotNilai {
+  kelasId     Int
+  kelas       Kelas     @relation(fields: [kelasId], references: [id], onDelete: Cascade)
+  pelajaranId Int
+  pelajaran   Pelajaran @relation(fields: [pelajaranId], references: [id], onDelete: Cascade)
+  semester    Semester
+  tugas       Int
+  kuis        Int
+  ujian       Int
+
+  @@id([kelasId, pelajaranId, semester])
+}
